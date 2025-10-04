@@ -26,20 +26,21 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses & install packages
+      - name: Accept licenses & install SDK packages
         run: |
-          yes | sdkmanager --licenses
+          yes | sdkmanager --licenses >/dev/null
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Gradle build (assembleDebug)
-        id: gradle_build
-        uses: gradle/gradle-build-action@v3
-        with:
-          arguments: :app:assembleDebug --console=plain --no-daemon
+      # 关键：直接调用 Gradle Wrapper 主类，不依赖 ./gradlew 脚本
+      - name: Build debug APK
+        run: |
+          java -Dorg.gradle.appname=gradlew \
+               -classpath gradle/wrapper/gradle-wrapper.jar \
+               org.gradle.wrapper.GradleWrapperMain \
+               :app:assembleDebug
 
       - name: Upload APK
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: app-debug.apk
           path: app/build/outputs/apk/debug/app-debug.apk
