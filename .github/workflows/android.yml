@@ -1,17 +1,13 @@
 name: Android CI
 
 on:
-  push:
-    branches: [ main, ci/** ]
-  pull_request:
-    branches: [ main ]
+  push: { branches: [ main ] }
+  pull_request: { branches: [ main ] }
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,23 +17,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses & install SDK packages
+      - name: Accept licenses & install SDK 34
         run: |
           yes | sdkmanager --licenses >/dev/null
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
-      # 关键：直接调用 Gradle Wrapper 主类，不依赖 ./gradlew 脚本
-      - name: Build debug APK
-        run: |
-          java -Dorg.gradle.appname=gradlew \
-               -classpath gradle/wrapper/gradle-wrapper.jar \
-               org.gradle.wrapper.GradleWrapperMain \
-               :app:assembleDebug
+      - name: Build with Gradle 8.9
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 8.9
+          arguments: :app:assembleDebug --stacktrace --console=plain
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
