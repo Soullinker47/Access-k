@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # 稳定网络与 Gradle 行为（强制 IPv4，拉长超时，给 JVM 一点内存）
+      # 更稳的网络与 Gradle 行为
       GRADLE_OPTS: >-
         -Djava.net.preferIPv4Stack=true
         -Dorg.gradle.internal.http.connectionTimeout=60000
@@ -31,13 +31,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # 直接使用已安装的 Gradle 8.9（不依赖仓库里的 wrapper，绕开下载抽风）
+      # 直接用安装版 Gradle 8.9 编译（不依赖仓库 wrapper，少踩坑）
       - name: Use Gradle 8.9
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.9
 
-      # 构建（带重试）
       - name: Build Debug APK (retry x3)
         uses: nick-fields/retry@v3
         with:
@@ -47,7 +46,7 @@ jobs:
             gradle --version
             gradle clean :app:assembleDebug --stacktrace --no-daemon --warning-mode all
 
-      # 列出产物，方便排错
+      # 列目录，方便你在日志里确认产物路径
       - name: List build outputs
         run: |
           echo "== APKs =="
@@ -57,7 +56,7 @@ jobs:
           echo "== app/build/outputs =="
           ls -R app/build/outputs || true
 
-      # 上传产物；找不到就直接报错，不再“装作成功”
+      # 1) 上传到 Artifacts（Web 界面“Artifacts”里能下载；找不到就报错）
       - name: Upload build artifacts (APK/AAB)
         uses: actions/upload-artifact@v4
         with:
@@ -68,3 +67,16 @@ jobs:
           if-no-files-found: error
           compression-level: 6
           retention-days: 7
+
+      # 2) 顺带发一个预发布，把 APK 也挂在 Releases 页面，手机端更好找
+      - name: Publish GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: build-${{ github.run_id }}
+          name: "CI build #${{ github.run_number }}"
+          prerelease: true
+          files: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/bundle/**/**/*.aab
