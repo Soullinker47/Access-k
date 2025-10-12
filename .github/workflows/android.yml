@@ -1,3 +1,4 @@
+
 name: Android CI
 
 on:
@@ -5,12 +6,16 @@ on:
   push:
     branches: [ main ]
 
-permissions:
-  contents: write   # 允许自动把生成的 wrapper 提交回仓库
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 强制 IPv4，拉依赖别走蹦跶的 IPv6；顺便把超时拉长点
+      GRADLE_OPTS: >-
+        -Djava.net.preferIPv4Stack=true
+        -Dorg.gradle.internal.http.connectionTimeout=60000
+        -Dorg.gradle.internal.http.socketTimeout=180000
+        -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
 
     steps:
       - name: Checkout
@@ -21,42 +26,30 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # 用“外置 Gradle 8.9”先生成本仓库的 wrapper（你仓库里现在没有/不对）
-      - name: Generate Gradle Wrapper (8.9)
+      # 用“安装版 Gradle 8.9”直接跑，不依赖 wrapper 下载分发包，避开 services.gradle.org
+      - name: Use Gradle 8.9
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.9
-      - name: Create wrapper files
-        run: |
-          gradle wrapper --gradle-version 8.9 --distribution-type all
-          mkdir -p gradle/wrapper
-          # 显式把 distributionUrl 改到 8.9-all，防止版本不对
-          sed -i 's#distributionUrl=.*#distributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-all.zip#' gradle/wrapper/gradle-wrapper.properties
 
-      - name: Commit Wrapper
-        uses: stefanzweifel/git-auto-commit-action@v5
+      # 没有 wrapper 也无所谓；有的话顺手加可执行权限但不强求
+      - name: Make wrapper executable (best-effort)
+        run: chmod +x ./gradlew || true
+
+      # 关键：用 `gradle` 命令构建（不是 ./gradlew），加重试避免偶发网络波动
+      - name: Build Debug APK (retry x3)
+        uses: nick-fields/retry@v3
         with:
-          commit_message: "ci: add/update Gradle wrapper 8.9"
-          file_pattern: |
-            gradlew
-            gradlew.bat
-            gradle/wrapper/**
-
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v2
-
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
-
-      - name: Verify versions
-        run: ./gradlew --version
-
-      - name: Build Debug APK
-        run: ./gradlew clean :app:assembleDebug --stacktrace --no-daemon --warning-mode all
+          max_attempts: 3
+          timeout_minutes: 25
+          command: |
+            gradle --version
+            gradle clean :app:assembleDebug --stacktrace --no-daemon --warning-mode all
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
