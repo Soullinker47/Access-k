@@ -1,37 +1,60 @@
 name: Android CI
+
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
+
+permissions:
+  contents: write   # 允许自动提交 wrapper
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # 1) 用“外置 Gradle 8.7”先生成 wrapper 文件（仓库目前没有 gradlew）
+      - name: Generate Gradle Wrapper (8.7)
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 8.7
+          arguments: |
+            wrapper
+            --gradle-version 8.7
+            --distribution-type bin
+
+      # 2) 把新生成的 wrapper 提交进仓库（gradlew/gradlew.bat + gradle/wrapper/*）
+      - name: Commit Wrapper
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "ci: add Gradle wrapper 8.7"
+          file_pattern: |
+            gradlew
+            gradlew.bat
+            gradle/wrapper/**
+
+      # 3) 校验 wrapper（现在有文件了）
+      - name: Validate Gradle Wrapper
+        uses: gradle/wrapper-validation-action@v2
+
+      # 4) 真正用 wrapper 编译 APK
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: wrapper
-          arguments: |
-            clean
-            assembleDebug
-            --stacktrace
-            --no-daemon
-            --warning-mode all
+        run: ./gradlew clean :app:assembleDebug --stacktrace --no-daemon --warning-mode all
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
